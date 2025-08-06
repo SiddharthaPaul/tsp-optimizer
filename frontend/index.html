@@ -21,7 +21,7 @@
       const distanceStr = document.getElementById("distances").value.trim().split("\\n");
       const distances = distanceStr.map(row => row.split(",").map(Number));
 
-      const res = await fetch("https://<YOUR_BACKEND_URL>/optimize-route", {
+      const res = await fetch("https://tsp-optimizer-production.up.railway.app//optimize-route", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({ locations, distances })
