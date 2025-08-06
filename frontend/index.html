@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>TSP Route Optimizer</title>
   <meta charset="UTF-8">
+  <title>TSP Route Optimizer</title>
 </head>
 <body>
   <h2>Enter Locations (comma-separated)</h2>
@@ -21,19 +21,50 @@
 
   <script>
     async function getRoute() {
-      const locations = document.getElementById("locations").value.split(",").map(s => s.trim());
-      const distanceStr = document.getElementById("distances").value.trim().split("\n");
-      const distances = distanceStr.map(row => row.split(",").map(Number));
+      const resultEl = document.getElementById("result");
+      resultEl.innerText = "Processing...";
 
-      const res = await fetch("https://tsp-optimizer-production.up.railway.app/optimize-route", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ locations, distances })
-      });
+      try {
+        // Get locations
+        const locations = document.getElementById("locations").value
+          .split(",").map(s => s.trim());
 
-      const data = await res.json();
-      document.getElementById("result").innerText =
-        `Optimal Route: ${data.route.join(" → ")}\nTotal Cost: ${data.cost}`;
+        // Get distance matrix
+        const distanceStr = document.getElementById("distances").value.trim().split("\n");
+        const distances = distanceStr.map(row => row.split(",").map(val => {
+          const num = Number(val.trim());
+          if (isNaN(num)) throw new Error("Distance matrix contains non-numeric values.");
+          return num;
+        }));
+
+        // Basic validation
+        if (locations.length !== distances.length ||
+            !distances.every(row => row.length === locations.length)) {
+          throw new Error("Distance matrix dimensions must match number of locations.");
+        }
+
+        // Call backend
+        const res = await fetch("https://tsp-optimizer-production.up.railway.app/optimize-route", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ locations, distances })
+        });
+
+        if (!res.ok) {
+          throw new Error(`Server error: ${res.status} ${res.statusText}`);
+        }
+
+        const data = await res.json();
+
+        if (!data.route || !data.cost) {
+          throw new Error("Invalid response from server.");
+        }
+
+        resultEl.innerText =
+          `✅ Optimal Route: ${data.route.join(" → ")}\n💰 Total Cost: ${data.cost}`;
+      } catch (err) {
+        resultEl.innerText = `❌ Error: ${err.message}`;
+      }
     }
   </script>
 </body>
