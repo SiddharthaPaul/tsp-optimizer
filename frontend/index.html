@@ -1,18 +1,12 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8">
   <title>TSP Route Optimizer</title>
+  <meta charset="UTF-8">
 </head>
 <body>
   <h2>Enter Locations (comma-separated)</h2>
-  <textarea id="locations" rows="2" cols="50">A,B,C,D</textarea><br><br>
-
-  <h2>Enter Distance Matrix (one row per line, CSV)</h2>
-  <textarea id="distances" rows="6" cols="50">0,10,15,20
-10,0,35,25
-15,35,0,30
-20,25,30,0</textarea><br><br>
+  <textarea id="locations" rows="2" cols="50">New York,Los Angeles,Chicago,Houston</textarea><br><br>
 
   <button onclick="getRoute()">Get Optimal Route</button>
 
@@ -21,51 +15,94 @@
 
   <script>
     async function getRoute() {
-      const resultEl = document.getElementById("result");
-      resultEl.innerText = "Processing...";
+      const locations = document.getElementById("locations").value.split(",").map(s => s.trim());
 
-      try {
-        // Get locations
-        const locations = document.getElementById("locations").value
-          .split(",").map(s => s.trim());
+      const res = await fetch("https://tsp-optimizer-production.up.railway.app/optimize-route", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ locations })
+      });
 
-        // Get distance matrix
-        const distanceStr = document.getElementById("distances").value.trim().split("\n");
-        const distances = distanceStr.map(row => row.split(",").map(val => {
-          const num = Number(val.trim());
-          if (isNaN(num)) throw new Error("Distance matrix contains non-numeric values.");
-          return num;
-        }));
-
-        // Basic validation
-        if (locations.length !== distances.length ||
-            !distances.every(row => row.length === locations.length)) {
-          throw new Error("Distance matrix dimensions must match number of locations.");
-        }
-
-        // Call backend
-        const res = await fetch("https://tsp-optimizer-production.up.railway.app/optimize-route", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ locations, distances })
-        });
-
-        if (!res.ok) {
-          throw new Error(`Server error: ${res.status} ${res.statusText}`);
-        }
-
-        const data = await res.json();
-
-        if (!data.route || !data.cost) {
-          throw new Error("Invalid response from server.");
-        }
-
-        resultEl.innerText =
-          `✅ Optimal Route: ${data.route.join(" → ")}\n💰 Total Cost: ${data.cost}`;
-      } catch (err) {
-        resultEl.innerText = `❌ Error: ${err.message}`;
+      if (!res.ok) {
+        document.getElementById("result").innerText = `Error: ${res.statusText}`;
+        return;
       }
+
+      const data = await res.json();
+      document.getElementById("result").innerText = `Optimal Route:\n${data.route.join(" → ")}\nTotal Distance: ${data.cost} km\n\nMap: ${data.map_url}`;
     }
   </script>
 </body>
 </html>
+
+<!--<!DOCTYPE html>-->
+<!--<html lang="en">-->
+<!--<head>-->
+<!--  <meta charset="UTF-8">-->
+<!--  <title>TSP Route Optimizer</title>-->
+<!--</head>-->
+<!--<body>-->
+<!--  <h2>Enter Locations (comma-separated)</h2>-->
+<!--  <textarea id="locations" rows="2" cols="50">A,B,C,D</textarea><br><br>-->
+
+<!--  <h2>Enter Distance Matrix (one row per line, CSV)</h2>-->
+<!--  <textarea id="distances" rows="6" cols="50">0,10,15,20-->
+<!--10,0,35,25-->
+<!--15,35,0,30-->
+<!--20,25,30,0</textarea><br><br>-->
+
+<!--  <button onclick="getRoute()">Get Optimal Route</button>-->
+
+<!--  <h3>Result:</h3>-->
+<!--  <pre id="result">Waiting for input...</pre>-->
+
+<!--  <script>-->
+<!--    async function getRoute() {-->
+<!--      const resultEl = document.getElementById("result");-->
+<!--      resultEl.innerText = "Processing...";-->
+
+<!--      try {-->
+<!--        // Get locations-->
+<!--        const locations = document.getElementById("locations").value-->
+<!--          .split(",").map(s => s.trim());-->
+
+<!--        // Get distance matrix-->
+<!--        const distanceStr = document.getElementById("distances").value.trim().split("\n");-->
+<!--        const distances = distanceStr.map(row => row.split(",").map(val => {-->
+<!--          const num = Number(val.trim());-->
+<!--          if (isNaN(num)) throw new Error("Distance matrix contains non-numeric values.");-->
+<!--          return num;-->
+<!--        }));-->
+
+<!--        // Basic validation-->
+<!--        if (locations.length !== distances.length ||-->
+<!--            !distances.every(row => row.length === locations.length)) {-->
+<!--          throw new Error("Distance matrix dimensions must match number of locations.");-->
+<!--        }-->
+
+<!--        // Call backend-->
+<!--        const res = await fetch("https://tsp-optimizer-production.up.railway.app/optimize-route", {-->
+<!--          method: "POST",-->
+<!--          headers: { "Content-Type": "application/json" },-->
+<!--          body: JSON.stringify({ locations, distances })-->
+<!--        });-->
+
+<!--        if (!res.ok) {-->
+<!--          throw new Error(`Server error: ${res.status} ${res.statusText}`);-->
+<!--        }-->
+
+<!--        const data = await res.json();-->
+
+<!--        if (!data.route || !data.cost) {-->
+<!--          throw new Error("Invalid response from server.");-->
+<!--        }-->
+
+<!--        resultEl.innerText =-->
+<!--          `✅ Optimal Route: ${data.route.join(" → ")}\n💰 Total Cost: ${data.cost}`;-->
+<!--      } catch (err) {-->
+<!--        resultEl.innerText = `❌ Error: ${err.message}`;-->
+<!--      }-->
+<!--    }-->
+<!--  </script>-->
+<!--</body>-->
+<!--</html>-->

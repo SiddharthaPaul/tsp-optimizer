@@ -1,2 +1,6 @@
 fastapi
 uvicorn
+geopy
+openrouteservice
+ortools
+googlemaps
