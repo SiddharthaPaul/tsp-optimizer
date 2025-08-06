@@ -131,10 +131,12 @@ def build_gmaps_url(segment):
         'waypoints': '|'.join(segment[1:-1]) if len(segment) > 2 else ''
     })
 
-
-@app.get("/", response_class=HTMLResponse)
-async def get_form(request: Request):
-    return templates.TemplateResponse("form.html", {"request": request})
+@app.get("/")
+async def root():
+    return {"message": "Backend is running"}
+# @app.get("/", response_class=HTMLResponse)
+# async def get_form(request: Request):
+#     return templates.TemplateResponse("form.html", {"request": request})
 
 
 @app.post("/optimize", response_class=HTMLResponse)
