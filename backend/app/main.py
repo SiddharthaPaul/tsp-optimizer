@@ -1,126 +1,94 @@
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi import FastAPI, Request, Form
-from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from typing import List
 import googlemaps
-from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 import numpy as np
 from urllib.parse import urlencode
-
+from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 
 app = FastAPI()
 
+# Enable CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Or restrict to your frontend URL
+    allow_origins=["*"],  # adjust for production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# class RouteRequest(BaseModel):
-#     locations: List[str]
-#     distances: List[List[float]]
-#
-# @app.post("/optimize-route")
-# def optimize_route(data: RouteRequest):
-#     locations = data.locations
-#     dist = data.distances
-#     n = len(locations)
-#
-#     min_cost = float("inf")
-#     best_path = []
-#
-#     for perm in itertools.permutations(range(n)):
-#         cost = sum(dist[perm[i]][perm[i+1]] for i in range(n - 1))
-#         cost += dist[perm[-1]][perm[0]]
-#         if cost < min_cost:
-#             min_cost = cost
-#             best_path = perm
-#
-#     return {
-#         "route": [locations[i] for i in best_path],
-#         "cost": min_cost
-#     }
+# --- Models ---
+class RouteRequest(BaseModel):
+    api_key: str
+    locations: List[str]
 
-templates = Jinja2Templates(directory="templates")
+class RouteResponse(BaseModel):
+    ordered_locations: List[str]
+    total_distance_km: float
+    maps_links: List[str]
 
-
-def compute_optimal_route(api_key, places, distance_matrix=None, mode='walking', avoid='ferries'):
+# --- Google Maps Helper ---
+def get_distance_matrix(api_key: str, places: List[str], mode='walking', avoid='ferries'):
+    gmaps = googlemaps.Client(key=api_key)
     n = len(places)
+    matrix = np.zeros((n, n))
 
-    if distance_matrix is None:
-        gmaps = googlemaps.Client(key=api_key)
-        distance_matrix = np.zeros((n, n))
-
-        for i, origin in enumerate(places):
-            for j, destination in enumerate(places):
-                if i != j:
+    for i, origin in enumerate(places):
+        for j, destination in enumerate(places):
+            if i != j:
+                try:
                     result = gmaps.distance_matrix(origin, destination, mode=mode, avoid=avoid)
-                    try:
-                        meters = result['rows'][0]['elements'][0]['distance']['value']
-                        distance_matrix[i][j] = meters
-                    except Exception as e:
-                        raise ValueError(f"Error getting distance between '{origin}' and '{destination}': {e}")
-                else:
-                    distance_matrix[i][j] = 0
+                    matrix[i][j] = result['rows'][0]['elements'][0]['distance']['value']
+                except Exception as e:
+                    raise HTTPException(status_code=400, detail=f"Failed to get distance between {origin} and {destination}: {e}")
+    return matrix
 
-        distance_matrix = distance_matrix.tolist()
-    else:
-        distance_matrix = np.array(distance_matrix)
-
+# --- Route Optimizer ---
+def solve_tsp(distance_matrix, places):
+    n = len(places)
     manager = pywrapcp.RoutingIndexManager(n, 1, 0)
     routing = pywrapcp.RoutingModel(manager)
 
-    def distance_callback(from_index, to_index):
-        from_node = manager.IndexToNode(from_index)
-        to_node = manager.IndexToNode(to_index)
-        return int(distance_matrix[from_node][to_node])
+    def distance_callback(from_idx, to_idx):
+        return int(distance_matrix[manager.IndexToNode(from_idx)][manager.IndexToNode(to_idx)])
 
-    transit_callback_index = routing.RegisterTransitCallback(distance_callback)
-    routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
+    transit_cb_index = routing.RegisterTransitCallback(distance_callback)
+    routing.SetArcCostEvaluatorOfAllVehicles(transit_cb_index)
 
-    search_parameters = pywrapcp.DefaultRoutingSearchParameters()
-    search_parameters.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.SAVINGS
-    search_parameters.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
-    search_parameters.time_limit.FromSeconds(60)
+    search_params = pywrapcp.DefaultRoutingSearchParameters()
+    search_params.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.SAVINGS
+    search_params.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
+    search_params.time_limit.FromSeconds(60)
 
-    solution = routing.SolveWithParameters(search_parameters)
+    solution = routing.SolveWithParameters(search_params)
 
-    if solution:
-        index = routing.Start(0)
-        route = []
-        total_distance = 0
-        while not routing.IsEnd(index):
-            node = manager.IndexToNode(index)
-            route.append(node)
-            next_index = solution.Value(routing.NextVar(index))
-            total_distance += routing.GetArcCostForVehicle(index, next_index, 0)
-            index = next_index
-        route.append(manager.IndexToNode(index))
+    if not solution:
+        raise HTTPException(status_code=500, detail="No optimal solution found")
 
-        ordered_places = [places[i] for i in route]
+    index = routing.Start(0)
+    route = []
+    total_distance = 0
 
-        return {
-            "ordered_locations": ordered_places,
-            "total_distance_km": round(total_distance / 1000, 2),
-            "route_indices": route,
-            "distance_matrix": distance_matrix
-        }
-    else:
-        raise Exception("No solution found.")
+    while not routing.IsEnd(index):
+        node = manager.IndexToNode(index)
+        route.append(node)
+        next_index = solution.Value(routing.NextVar(index))
+        total_distance += routing.GetArcCostForVehicle(index, next_index, 0)
+        index = next_index
 
+    route.append(manager.IndexToNode(index))
+    ordered_places = [places[i] for i in route]
+    return ordered_places, total_distance / 1000
 
-def split_segments(route_places, max_per_segment=10):
-    segments = []
-    i = 0
-    while i < len(route_places):
-        segment = route_places[i:i + max_per_segment]
-        if len(segment) >= 2:
-            segments.append(segment)
-        i += max_per_segment - 1
+# --- Google Maps Segment Links ---
+def split_segments(locations, max_len=10):
+    i, segments = 0, []
+    while i < len(locations):
+        segment = locations[i:i+max_len]
+        segments.append(segment)
+        i += max_len - 1
     return segments
-
 
 def build_gmaps_url(segment):
     return "https://www.google.com/maps/dir/?" + urlencode({
@@ -131,29 +99,24 @@ def build_gmaps_url(segment):
         'waypoints': '|'.join(segment[1:-1]) if len(segment) > 2 else ''
     })
 
+# --- API Endpoints ---
 @app.get("/")
-async def root():
+def health_check():
     return {"message": "Backend is running"}
-# @app.get("/", response_class=HTMLResponse)
-# async def get_form(request: Request):
-#     return templates.TemplateResponse("form.html", {"request": request})
 
+@app.post("/optimize-route", response_model=RouteResponse)
+def optimize_route(request: RouteRequest):
+    places = request.locations
+    if len(places) < 2:
+        raise HTTPException(status_code=400, detail="At least two locations required")
 
-@app.post("/optimize", response_class=HTMLResponse)
-async def optimize_route(request: Request, api_key: str = Form(...), locations: str = Form(...)):
-    location_list = [loc.strip() for loc in locations.split(',') if loc.strip()]
-    try:
-        result = compute_optimal_route(api_key=api_key, places=location_list)
-        segments = split_segments(result['ordered_locations'])
-        maps_links = [build_gmaps_url(seg) for seg in segments]
-        return templates.TemplateResponse("result.html", {
-            "request": request,
-            "route": result['ordered_locations'],
-            "distance": result['total_distance_km'],
-            "maps_links": maps_links
-        })
-    except Exception as e:
-        return templates.TemplateResponse("form.html", {
-            "request": request,
-            "error": str(e)
-        })
+    matrix = get_distance_matrix(api_key=request.api_key, places=places)
+    route, total_km = solve_tsp(matrix, places)
+    segments = split_segments(route)
+    map_links = [build_gmaps_url(seg) for seg in segments]
+
+    return {
+        "ordered_locations": route,
+        "total_distance_km": round(total_km, 2),
+        "maps_links": map_links
+    }
