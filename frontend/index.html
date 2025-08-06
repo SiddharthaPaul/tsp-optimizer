@@ -6,24 +6,28 @@
 </head>
 <body>
   <h2>Enter Locations (comma-separated)</h2>
-  <textarea id="locations">A,B,C,D</textarea><br>
+  <textarea id="locations" rows="2" cols="50">A,B,C,D</textarea><br><br>
 
-  <h2>Enter Distance Matrix (CSV row by row)</h2>
-  <textarea id="distances">0,10,15,20\n10,0,35,25\n15,35,0,30\n20,25,30,0</textarea><br>
+  <h2>Enter Distance Matrix (one row per line, CSV)</h2>
+  <textarea id="distances" rows="6" cols="50">0,10,15,20
+10,0,35,25
+15,35,0,30
+20,25,30,0</textarea><br><br>
 
   <button onclick="getRoute()">Get Optimal Route</button>
 
-  <p id="result"></p>
+  <h3>Result:</h3>
+  <pre id="result">Waiting for input...</pre>
 
   <script>
     async function getRoute() {
-      const locations = document.getElementById("locations").value.split(",");
-      const distanceStr = document.getElementById("distances").value.trim().split("\\n");
+      const locations = document.getElementById("locations").value.split(",").map(s => s.trim());
+      const distanceStr = document.getElementById("distances").value.trim().split("\n");
       const distances = distanceStr.map(row => row.split(",").map(Number));
 
-      const res = await fetch("https://tsp-optimizer-production.up.railway.app//optimize-route", {
+      const res = await fetch("https://tsp-optimizer-production.up.railway.app/optimize-route", {
         method: "POST",
-        headers: {"Content-Type": "application/json"},
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ locations, distances })
       });
 
