@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>TSP Route Optimizer</title>
+  <meta charset="UTF-8">
+</head>
+<body>
+  <h2>Enter Locations (comma-separated)</h2>
+  <textarea id="locations">A,B,C,D</textarea><br>
+
+  <h2>Enter Distance Matrix (CSV row by row)</h2>
+  <textarea id="distances">0,10,15,20\n10,0,35,25\n15,35,0,30\n20,25,30,0</textarea><br>
+
+  <button onclick="getRoute()">Get Optimal Route</button>
+
+  <p id="result"></p>
+
+  <script>
+    async function getRoute() {
+      const locations = document.getElementById("locations").value.split(",");
+      const distanceStr = document.getElementById("distances").value.trim().split("\\n");
+      const distances = distanceStr.map(row => row.split(",").map(Number));
+
+      const res = await fetch("https://<YOUR_BACKEND_URL>/optimize-route", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ locations, distances })
+      });
+
+      const data = await res.json();
+      document.getElementById("result").innerText =
+        `Optimal Route: ${data.route.join(" → ")}\nTotal Cost: ${data.cost}`;
+    }
+  </script>
+</body>
+</html>
